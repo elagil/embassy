@@ -19,6 +19,7 @@ pub use vals::{Bitframesdd as SddPat, Discardmode as DiscardMode};
 
 use crate::interrupt::InterruptExt;
 use crate::pac::nfct::vals;
+use crate::pac::NFCT;
 use crate::peripherals::NFCT;
 use crate::util::slice_in_ram;
 use crate::{interrupt, pac, Peripheral};
@@ -212,6 +213,10 @@ impl<'d> NfcT<'d> {
             #[cfg(not(feature = "nrf52832"))]
             r.autocolresconfig().write(|w| w.0 = 0b10);
 
+            // framedelaymax=4096 is needed to make it work with phones from
+            // a certain company named after some fruit.
+            r.framedelaymin().write(|w| w.set_framedelaymin(1152));
+            r.framedelaymax().write(|w| w.set_framedelaymax(4096));
             r.framedelaymode().write(|w| {
                 w.set_framedelaymode(vals::Framedelaymode::WINDOW_GRID);
             });
@@ -259,15 +264,20 @@ impl<'d> NfcT<'d> {
                 continue;
             }
 
-            // TODO: add support for "window" frame delay, which is technically
-            // needed to be compliant with iso14443-4
-            r.framedelaymode().write(|w| {
-                w.set_framedelaymode(vals::Framedelaymode::FREE_RUN);
-            });
-
             // disable autocoll
             #[cfg(not(feature = "nrf52832"))]
             r.autocolresconfig().write(|w| w.0 = 0b11u32);
+
+            // once anticoll is done, set framedelaymax to the maximum possible.
+            // this gives the firmware as much time as possible to reply.
+            // higher layer still has to reply faster than the FWT it specifies in the iso14443-4 ATS,
+            // but that's not our concern.
+            //
+            // nrf52832 field is 16bit instead of 20bit. this seems to force a too short timeout, maybe it's a SVD bug?
+            #[cfg(not(feature = "nrf52832"))]
+            r.framedelaymax().write(|w| w.set_framedelaymax(0xF_FFFF));
+            #[cfg(feature = "nrf52832")]
+            r.framedelaymax().write(|w| w.set_framedelaymax(0xFFFF));
 
             return;
         }
@@ -328,7 +338,9 @@ impl<'d> NfcT<'d> {
 
             if r.events_error().read() != 0 {
                 trace!("Got error?");
-                warn!("errors: {:08x}", r.errorstatus().read().0);
+                let errs = r.errorstatus().read();
+                r.errorstatus().write(|w| w.0 = 0xFFFF_FFFF);
+                trace!("errors: {:08x}", errs.0);
                 r.events_error().write_value(0);
                 return Poll::Ready(Err(Error::RxError));
             }
@@ -382,7 +394,9 @@ impl<'d> NfcT<'d> {
             if r.events_rxerror().read() != 0 {
                 trace!("RXerror got in recv frame, should be back in idle state");
                 r.events_rxerror().write_value(0);
-                warn!("errors: {:08x}", r.errorstatus().read().0);
+                let errs = r.framestatus().rx().read();
+                r.framestatus().rx().write(|w| w.0 = 0xFFFF_FFFF);
+                trace!("errors: {:08x}", errs.0);
                 return Poll::Ready(Err(Error::RxError));
             }
 
@@ -406,4 +420,9 @@ impl<'d> NfcT<'d> {
         buf[..n].copy_from_slice(&self.rx_buf[..n]);
         Ok(n)
     }
+}
+
+/// Wake the system if there if an NFC field close to the antenna
+pub fn wake_on_nfc_sense() {
+    NFCT.tasks_sense().write_value(0x01);
 }
