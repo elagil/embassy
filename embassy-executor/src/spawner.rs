@@ -1,4 +1,4 @@
-use core::future::poll_fn;
+use core::future::{poll_fn, Future};
 use core::marker::PhantomData;
 use core::mem;
 use core::sync::atomic::Ordering;
@@ -62,6 +62,16 @@ pub enum SpawnError {
     Busy,
 }
 
+impl core::fmt::Display for SpawnError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            SpawnError::Busy => write!(f, "Busy"),
+        }
+    }
+}
+
+impl core::error::Error for SpawnError {}
+
 /// Handle to spawn tasks into an executor.
 ///
 /// This Spawner can spawn any task (Send and non-Send ones), but it can
@@ -90,7 +100,7 @@ impl Spawner {
     /// # Panics
     ///
     /// Panics if the current executor is not an Embassy executor.
-    pub async fn for_current_executor() -> Self {
+    pub fn for_current_executor() -> impl Future<Output = Self> {
         poll_fn(|cx| {
             let task = raw::task_from_waker(cx.waker());
             let executor = unsafe {
@@ -103,7 +113,6 @@ impl Spawner {
             let executor = unsafe { raw::Executor::wrap(executor) };
             Poll::Ready(Self::new(executor))
         })
-        .await
     }
 
     /// Spawn a task into an executor.
@@ -168,7 +177,7 @@ impl SendSpawner {
     /// # Panics
     ///
     /// Panics if the current executor is not an Embassy executor.
-    pub async fn for_current_executor() -> Self {
+    pub fn for_current_executor() -> impl Future<Output = Self> {
         poll_fn(|cx| {
             let task = raw::task_from_waker(cx.waker());
             let executor = unsafe {
@@ -180,7 +189,6 @@ impl SendSpawner {
             };
             Poll::Ready(Self::new(executor))
         })
-        .await
     }
 
     /// Spawn a task into an executor.

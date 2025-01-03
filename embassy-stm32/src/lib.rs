@@ -238,6 +238,10 @@ pub struct Config {
     #[cfg(any(stm32l4, stm32l5, stm32u5))]
     pub enable_independent_io_supply: bool,
 
+    /// On the U5 series all analog peripherals are powered by a separate supply.
+    #[cfg(stm32u5)]
+    pub enable_independent_analog_supply: bool,
+
     /// BDMA interrupt priority.
     ///
     /// Defaults to P0 (highest).
@@ -277,6 +281,8 @@ impl Default for Config {
             enable_debug_during_sleep: true,
             #[cfg(any(stm32l4, stm32l5, stm32u5))]
             enable_independent_io_supply: true,
+            #[cfg(stm32u5)]
+            enable_independent_analog_supply: true,
             #[cfg(bdma)]
             bdma_interrupt_priority: Priority::P0,
             #[cfg(dma)]
@@ -326,10 +332,11 @@ mod dual_core {
     /// ```
     ///
     /// This static must be placed in the same position for both cores. How and where this is done is left to the user.
+    #[repr(C)]
     pub struct SharedData {
         init_flag: AtomicUsize,
         clocks: UnsafeCell<MaybeUninit<Clocks>>,
-        config: UnsafeCell<MaybeUninit<Config>>,
+        config: UnsafeCell<MaybeUninit<SharedConfig>>,
     }
 
     unsafe impl Sync for SharedData {}
@@ -349,10 +356,15 @@ mod dual_core {
     pub fn init_primary(config: Config, shared_data: &'static MaybeUninit<SharedData>) -> Peripherals {
         let shared_data = unsafe { shared_data.assume_init_ref() };
 
+        // Write the flag as soon as possible. Reading this flag uninitialized in the `init_secondary`
+        // is maybe unsound? Unclear. If it is indeed unsound, writing it sooner doesn't fix it all,
+        // but improves the odds of it going right
+        shared_data.init_flag.store(0, Ordering::SeqCst);
+
         rcc::set_freqs_ptr(shared_data.clocks.get());
         let p = init_hw(config);
 
-        unsafe { *shared_data.config.get() }.write(config);
+        unsafe { *shared_data.config.get() }.write(config.into());
 
         shared_data.init_flag.store(INIT_DONE_FLAG, Ordering::SeqCst);
 
@@ -424,6 +436,40 @@ mod dual_core {
 
         Peripherals::take()
     }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct SharedConfig {
+        #[cfg(bdma)]
+        bdma_interrupt_priority: Priority,
+        #[cfg(dma)]
+        dma_interrupt_priority: Priority,
+        #[cfg(gpdma)]
+        gpdma_interrupt_priority: Priority,
+    }
+
+    impl From<Config> for SharedConfig {
+        fn from(value: Config) -> Self {
+            let Config {
+                #[cfg(bdma)]
+                bdma_interrupt_priority,
+                #[cfg(dma)]
+                dma_interrupt_priority,
+                #[cfg(gpdma)]
+                gpdma_interrupt_priority,
+                ..
+            } = value;
+
+            SharedConfig {
+                #[cfg(bdma)]
+                bdma_interrupt_priority,
+                #[cfg(dma)]
+                dma_interrupt_priority,
+                #[cfg(gpdma)]
+                gpdma_interrupt_priority,
+            }
+        }
+    }
 }
 
 #[cfg(feature = "_dual-core")]
@@ -487,6 +533,20 @@ fn init_hw(config: Config) -> Peripherals {
             crate::pac::PWR.svmcr().modify(|w| {
                 w.set_io2sv(config.enable_independent_io_supply);
             });
+            if config.enable_independent_analog_supply {
+                crate::pac::PWR.svmcr().modify(|w| {
+                    w.set_avm1en(true);
+                });
+                while !crate::pac::PWR.svmsr().read().vdda1rdy() {}
+                crate::pac::PWR.svmcr().modify(|w| {
+                    w.set_asv(true);
+                });
+            } else {
+                crate::pac::PWR.svmcr().modify(|w| {
+                    w.set_avm1en(false);
+                    w.set_avm2en(false);
+                });
+            }
         }
 
         // dead battery functionality is still present on these
