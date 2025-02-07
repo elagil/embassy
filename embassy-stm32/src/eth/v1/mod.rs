@@ -46,7 +46,7 @@ impl interrupt::typelevel::Handler<interrupt::typelevel::ETH> for InterruptHandl
 }
 
 /// Ethernet driver.
-pub struct Ethernet<'d, T: Instance, P: PHY> {
+pub struct Ethernet<'d, T: Instance, P: Phy> {
     _peri: PeripheralRef<'d, T>,
     pub(crate) tx: TDesRing<'d>,
     pub(crate) rx: RDesRing<'d>,
@@ -91,7 +91,7 @@ macro_rules! config_pins {
     };
 }
 
-impl<'d, T: Instance, P: PHY> Ethernet<'d, T, P> {
+impl<'d, T: Instance, P: Phy> Ethernet<'d, T, P> {
     /// safety: the returned instance is not leak-safe
     pub fn new<const TX: usize, const RX: usize>(
         queue: &'d mut PacketQueue<TX, RX>,
@@ -159,8 +159,8 @@ impl<'d, T: Instance, P: PHY> Ethernet<'d, T, P> {
             w.set_ifg(Ifg::IFG96); // inter frame gap 96 bit times
             w.set_apcs(Apcs::STRIP); // automatic padding and crc stripping
             w.set_fes(Fes::FES100); // fast ethernet speed
-            w.set_dm(Dm::FULLDUPLEX); // full duplex
-                                      // TODO: Carrier sense ? ECRSFD
+            w.set_dm(Dm::FULL_DUPLEX); // full duplex
+                                       // TODO: Carrier sense ? ECRSFD
         });
 
         // Set the mac to pass all multicast packets
@@ -186,8 +186,8 @@ impl<'d, T: Instance, P: PHY> Ethernet<'d, T, P> {
 
         // Transfer and Forward, Receive and Forward
         dma.dmaomr().modify(|w| {
-            w.set_tsf(Tsf::STOREFORWARD);
-            w.set_rsf(Rsf::STOREFORWARD);
+            w.set_tsf(Tsf::STORE_FORWARD);
+            w.set_rsf(Rsf::STORE_FORWARD);
         });
 
         dma.dmabmr().modify(|w| {
@@ -272,12 +272,12 @@ impl<'d, T: Instance, P: PHY> Ethernet<'d, T, P> {
 }
 
 /// Ethernet station management interface.
-pub struct EthernetStationManagement<T: Instance> {
+pub(crate) struct EthernetStationManagement<T: Instance> {
     peri: PhantomData<T>,
     clock_range: Cr,
 }
 
-unsafe impl<T: Instance> StationManagement for EthernetStationManagement<T> {
+impl<T: Instance> StationManagement for EthernetStationManagement<T> {
     fn smi_read(&mut self, phy_addr: u8, reg: u8) -> u16 {
         let mac = T::regs().ethernet_mac();
 
@@ -307,7 +307,7 @@ unsafe impl<T: Instance> StationManagement for EthernetStationManagement<T> {
     }
 }
 
-impl<'d, T: Instance, P: PHY> Drop for Ethernet<'d, T, P> {
+impl<'d, T: Instance, P: Phy> Drop for Ethernet<'d, T, P> {
     fn drop(&mut self) {
         let dma = T::regs().ethernet_dma();
         let mac = T::regs().ethernet_mac();

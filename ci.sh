@@ -129,7 +129,7 @@ cargo batch \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32f730i8,defmt,exti,time-driver-any,time \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h753zi,defmt,exti,time-driver-any,time \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h735zg,defmt,exti,time-driver-any,time \
-    --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h755zi-cm7,defmt,exti,time-driver-any,time \
+    --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h755zi-cm7,defmt,exti,time-driver-any,time,split-pc2,split-pc3 \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h725re,defmt,exti,time-driver-any,time \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h7b3ai,defmt,exti,time-driver-any,time \
     --- build --release --manifest-path embassy-stm32/Cargo.toml --target thumbv7em-none-eabi --features stm32h7b3ai,defmt,exti,time-driver-tim1,time \
@@ -231,6 +231,7 @@ cargo batch \
     --- build --release --manifest-path examples/stm32l0/Cargo.toml --target thumbv6m-none-eabi --out-dir out/examples/stm32l0 \
     --- build --release --manifest-path examples/stm32l1/Cargo.toml --target thumbv7m-none-eabi --out-dir out/examples/stm32l1 \
     --- build --release --manifest-path examples/stm32l4/Cargo.toml --target thumbv7em-none-eabi --out-dir out/examples/stm32l4 \
+    --- build --release --manifest-path examples/stm32l432/Cargo.toml --target thumbv7em-none-eabi --out-dir out/examples/stm32l432 \
     --- build --release --manifest-path examples/stm32l5/Cargo.toml --target thumbv8m.main-none-eabihf --out-dir out/examples/stm32l5 \
     --- build --release --manifest-path examples/stm32u0/Cargo.toml --target thumbv6m-none-eabi --out-dir out/examples/stm32u0 \
     --- build --release --manifest-path examples/stm32u5/Cargo.toml --target thumbv8m.main-none-eabihf --out-dir out/examples/stm32u5 \
@@ -304,6 +305,7 @@ cargo batch \
 # temporarily disabled, these boards are dead.
 rm -rf out/tests/stm32f103c8
 rm -rf out/tests/nrf52840-dk
+rm -rf out/tests/nrf52833-dk
 
 rm out/tests/stm32wb55rg/wpan_mac
 rm out/tests/stm32wb55rg/wpan_ble
