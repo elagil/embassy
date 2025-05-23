@@ -237,7 +237,16 @@ impl AnyChannel {
         fence(Ordering::SeqCst);
 
         ch.cr().write(|w| w.set_reset(true));
-        ch.fcr().write(|w| w.0 = 0xFFFF_FFFF); // clear all irqs
+        ch.fcr().write(|w| {
+            // Clear all irqs
+            w.set_dtef(true);
+            w.set_htf(true);
+            w.set_suspf(true);
+            w.set_tcf(true);
+            w.set_tof(true);
+            w.set_ulef(true);
+            w.set_usef(true);
+        });
         ch.llr().write(|_| {}); // no linked list
         ch.tr1().write(|w| {
             w.set_sdw(data_size.into());
@@ -294,7 +303,16 @@ impl AnyChannel {
         fence(Ordering::SeqCst);
 
         ch.cr().write(|w| w.set_reset(true));
-        ch.fcr().write(|w| w.0 = 0xFFFF_FFFF); // clear all irqs
+        ch.fcr().write(|w| {
+            // Clear all irqs
+            w.set_dtef(true);
+            w.set_htf(true);
+            w.set_suspf(true);
+            w.set_tcf(true);
+            w.set_tof(true);
+            w.set_ulef(true);
+            w.set_usef(true);
+        });
         ch.lbar().write(|reg| reg.set_lba(table.base_address()));
 
         // Empty LLI0.
@@ -341,21 +359,28 @@ impl AnyChannel {
         ch.cr().modify(|w| w.set_en(true));
     }
 
-    fn request_stop(&self) {
+    fn request_suspend(&self) {
         let info = self.info();
         let ch = info.dma.ch(info.num);
 
         ch.cr().modify(|w| w.set_susp(true))
     }
 
-    fn request_pause(&self) {
+    fn request_resume(&self) {
         let info = self.info();
         let ch = info.dma.ch(info.num);
 
-        // Disable the channel without overwriting the existing configuration
-        ch.cr().modify(|w| {
-            w.set_en(false);
-        });
+        ch.cr().modify(|w| w.set_susp(false));
+    }
+
+    fn request_reset(&self) {
+        let info = self.info();
+        let ch = info.dma.ch(info.num);
+
+        self.request_suspend();
+        while self.is_running() {}
+
+        ch.cr().modify(|w| w.set_reset(true));
     }
 
     fn is_running(&self) -> bool {
@@ -406,11 +431,26 @@ impl<'a, const ITEM_COUNT: usize> LinkedListTransfer<'a, ITEM_COUNT> {
         Self { channel }
     }
 
-    /// Request the transfer to stop.
+    /// Request the transfer to suspend.
+    ///
+    /// To resume the transfer, call [`request_resume`](Self::request_resume) again.
     ///
     /// This doesn't immediately stop the transfer, you have to wait until [`is_running`](Self::is_running) returns false.
-    pub fn request_stop(&mut self) {
-        self.channel.request_stop()
+    pub fn request_suspend(&mut self) {
+        self.channel.request_suspend()
+    }
+
+    /// Request the transfer to resume after being suspended.
+    pub fn request_resume(&mut self) {
+        self.channel.request_resume()
+    }
+
+    /// Request the DMA to reset.
+    ///
+    /// The configuration for this channel will **not be preserved**. If you need to restart the transfer
+    /// at a later point with the same configuration, see [`request_suspend`](Self::request_suspend) instead.
+    pub fn request_reset(&mut self) {
+        self.channel.request_reset()
     }
 
     /// Return whether this transfer is still running.
@@ -440,7 +480,7 @@ impl<'a, const ITEM_COUNT: usize> LinkedListTransfer<'a, ITEM_COUNT> {
 
 impl<'a, const ITEM_COUNT: usize> Drop for LinkedListTransfer<'a, ITEM_COUNT> {
     fn drop(&mut self) {
-        self.request_stop();
+        self.request_suspend();
         while self.is_running() {}
 
         // "Subsequent reads and writes cannot be moved ahead of preceding reads."
@@ -589,21 +629,26 @@ impl<'a> Transfer<'a> {
         Self { channel }
     }
 
-    /// Request the transfer to stop.
-    /// The configuration for this channel will **not be preserved**. If you need to restart the transfer
-    /// at a later point with the same configuration, see [`request_pause`](Self::request_pause) instead.
+    /// Request the transfer to suspend.
+    ///
+    /// To resume the transfer, call [`request_resume`](Self::request_resume) again.
     ///
     /// This doesn't immediately stop the transfer, you have to wait until [`is_running`](Self::is_running) returns false.
-    pub fn request_stop(&mut self) {
-        self.channel.request_stop()
+    pub fn request_suspend(&mut self) {
+        self.channel.request_suspend()
     }
 
-    /// Request the transfer to pause, keeping the existing configuration for this channel.
-    /// To restart the transfer, call [`start`](Self::start) again.
+    /// Request the transfer to resume after being suspended.
+    pub fn request_resume(&mut self) {
+        self.channel.request_resume()
+    }
+
+    /// Request the DMA to reset.
     ///
-    /// This doesn't immediately stop the transfer, you have to wait until [`is_running`](Self::is_running) returns false.
-    pub fn request_pause(&mut self) {
-        self.channel.request_pause()
+    /// The configuration for this channel will **not be preserved**. If you need to restart the transfer
+    /// at a later point with the same configuration, see [`request_suspend`](Self::request_suspend) instead.
+    pub fn request_reset(&mut self) {
+        self.channel.request_reset()
     }
 
     /// Return whether this transfer is still running.
@@ -633,7 +678,7 @@ impl<'a> Transfer<'a> {
 
 impl<'a> Drop for Transfer<'a> {
     fn drop(&mut self) {
-        self.request_stop();
+        self.request_suspend();
         while self.is_running() {}
 
         // "Subsequent reads and writes cannot be moved ahead of preceding reads."

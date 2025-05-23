@@ -648,8 +648,8 @@ impl Config {
 }
 
 enum RingBuffer<'d, W: word::Word> {
-    Writable(WritableRingBuffer<'d, W>),
-    Readable(ReadableRingBuffer<'d, W>),
+    Writable(WritableRingBuffer<'d, W, 2>),
+    Readable(ReadableRingBuffer<'d, W, 2>),
 }
 
 fn dr<W: word::Word>(w: crate::pac::sai::Sai, sub_block: WhichSubBlock) -> *mut W {
